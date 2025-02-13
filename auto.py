@@ -7,7 +7,7 @@ import threading
 import re
 import sys
 
-# Konfigurasi logging
+# Configure logging
 logging.basicConfig(filename="bot.log", level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logging.info("Bot started!")
 
@@ -19,7 +19,7 @@ config = load_config()
 TOKEN = config.get("DISCORD_TOKEN")
 SLOW_MODE_TRACKER = {}
 
-# Fungsi untuk memformat mention user
+# Function to format user mention
 def format_message(message):
     match = re.match(r"@(\d+)\s(.+)", message)
     if match:
@@ -27,7 +27,7 @@ def format_message(message):
         return f"<@{user_id}> {content}", user_id
     return message, None
 
-# Fungsi untuk mengirim pesan ke satu channel
+# Function to send a message to a channel
 def send_message(channel_id, message):
     global SLOW_MODE_TRACKER
     url = f"https://discord.com/api/v9/channels/{channel_id}/messages"
@@ -40,55 +40,55 @@ def send_message(channel_id, message):
         "allowed_mentions": {"parse": ["users"], "users": [user_id] if user_id else []}
     }
     
-    logging.info(f"Mengirim pesan ke channel {channel_id}: {data}")
+    logging.info(f"Sending message to channel {channel_id}: {data}")
     response = requests.post(url, json=data, headers=headers)
     
     if response.status_code == 429:
         retry_after = response.json().get("retry_after", 0)
         SLOW_MODE_TRACKER[channel_id] = time.time() + retry_after
-        logging.warning(f"Rate limit! Channel {channel_id} harus menunggu {retry_after} detik sebelum mengirim ulang.")
+        logging.warning(f"Rate limit! Channel {channel_id} must wait {retry_after} seconds before retrying.")
         return False, retry_after
     
     elif response.status_code in [200, 201]:
         slow_mode_delay = response.json().get("slowmode_delay", 0)
         if slow_mode_delay > 0:
             SLOW_MODE_TRACKER[channel_id] = time.time() + slow_mode_delay
-            logging.info(f"Slow mode aktif {slow_mode_delay} detik untuk channel {channel_id}.")
-        logging.info(f"Pesan berhasil dikirim ke channel {channel_id}.")
+            logging.info(f"Slow mode active for {slow_mode_delay} seconds in channel {channel_id}.")
+        logging.info(f"Message successfully sent to channel {channel_id}.")
         return True, 0
     else:
-        logging.error(f"Gagal mengirim pesan ke channel {channel_id}. Status: {response.status_code}, Respon: {response.text}")
+        logging.error(f"Failed to send message to channel {channel_id}. Status: {response.status_code}, Response: {response.text}")
         return False, 0
 
-# Fungsi untuk mendapatkan daftar channel dari .env
+# Function to get the list of channels from .env
 def get_channels():
     config = load_config()
     channels = {key.replace("CHANNEL_", ""): value for key, value in config.items() if key.startswith("CHANNEL_")}
-    logging.info(f"Daftar channel ditemukan: {list(channels.keys())}")
+    logging.info(f"Found channels: {list(channels.keys())}")
     return channels
 
-# Fungsi untuk menambahkan channel baru ke .env
+# Function to add a new channel to .env
 def add_channel():
-    faucet_name = input("Masukkan Nama Faucet: ")  # Input baru untuk nama faucet
-    channel_id = input("Masukkan Channel ID: ")
-    message = input("Masukkan pesan yang ingin dikirim: ")
+    faucet_name = input("Enter Faucet Name: ")  # New input for faucet name
+    channel_id = input("Enter Channel ID: ")
+    message = input("Enter the message to send: ")
     with open(".env", "a") as f:
-        f.write(f"\nCHANNEL_{channel_id}={message} # {faucet_name}")  # Menyimpan nama faucet sebagai komentar
-    logging.info(f"Channel {channel_id} ({faucet_name}) dan pesan berhasil disimpan!")
-    print("Channel dan pesan berhasil ditambahkan!")
+        f.write(f"\nCHANNEL_{channel_id}={message} # {faucet_name}")  # Save faucet name as a comment
+    logging.info(f"Channel {channel_id} ({faucet_name}) and message saved successfully!")
+    print("Channel and message successfully added!")
 
-# Fungsi untuk mengirim semua pesan
+# Function to send messages to all channels
 def send_all_messages():
     channels = get_channels()
     if not channels:
-        logging.warning("Tidak ada channel yang tersimpan.")
-        print("Tidak ada channel yang tersimpan.")
+        logging.warning("No saved channels.")
+        print("No saved channels.")
         return
     
     pending_channels = {}
     sent_channels = []
     
-    # Kirim pesan ke setiap channel, hanya tunda jika terkena slow mode
+    # Send messages to each channel, delay only if rate limited
     for channel_id, message in channels.items():
         success, wait_time = send_message(channel_id, message)
         if success:
@@ -96,60 +96,60 @@ def send_all_messages():
         if not success and wait_time > 0:
             pending_channels[channel_id] = (message, wait_time)
     
-    logging.info(f"Pesan telah dikirim ke channel: {', '.join(sent_channels)}")
-    print(f"Pesan telah dikirim ke channel: {', '.join(sent_channels)}")
+    logging.info(f"Messages sent to channels: {', '.join(sent_channels)}")
+    print(f"Messages sent to channels: {', '.join(sent_channels)}")
     
     if pending_channels:
-        logging.info("Channel yang terkena slow mode:")
-        print("Channel yang terkena slow mode:")
+        logging.info("Channels under slow mode:")
+        print("Channels under slow mode:")
         for channel_id, (_, wait_time) in pending_channels.items():
-            logging.info(f" - {channel_id}: {wait_time} detik")
-            print(f" - {channel_id}: {wait_time} detik")
+            logging.info(f" - {channel_id}: {wait_time} seconds")
+            print(f" - {channel_id}: {wait_time} seconds")
     
-    # Proses ulang hanya untuk channel yang terkena slow mode secara independen
+    # Retry only for channels under slow mode
     def process_pending():
         while pending_channels:
             for channel_id in list(pending_channels.keys()):
                 message, wait_time = pending_channels[channel_id]
                 time_to_wait = max(0, SLOW_MODE_TRACKER.get(channel_id, 0) - time.time())
                 if time_to_wait > 0:
-                    logging.info(f"Menunggu {time_to_wait} detik sebelum mengirim ulang ke channel {channel_id}.")
-                    print(f"Menunggu {time_to_wait} detik sebelum mengirim ulang ke channel {channel_id}.")
+                    logging.info(f"Waiting {time_to_wait} seconds before retrying for channel {channel_id}.")
+                    print(f"Waiting {time_to_wait} seconds before retrying for channel {channel_id}.")
                     time.sleep(time_to_wait)
                 success, new_wait_time = send_message(channel_id, message)
                 if success or new_wait_time == 0:
                     del pending_channels[channel_id]
-                    sent_channels.append(channel_id)  # Tambahkan ke daftar berhasil dikirim
-                    logging.info(f"Pesan akhirnya dikirim ke channel {channel_id}.")
+                    sent_channels.append(channel_id)  # Add to successfully sent list
+                    logging.info(f"Message finally sent to channel {channel_id}.")
         
-        logging.info(f"Semua pesan berhasil dikirim ke channel: {', '.join(sent_channels)}")
-        print(f"Semua pesan berhasil dikirim ke channel: {', '.join(sent_channels)}")
+        logging.info(f"All messages successfully sent to channels: {', '.join(sent_channels)}")
+        print(f"All messages successfully sent to channels: {', '.join(sent_channels)}")
 
     slow_mode_thread = threading.Thread(target=process_pending)
     slow_mode_thread.start()
 
-# Loop utama
+# Main loop
 try:
     while True:
-        print("\nPilih opsi:")
+        print("\nChoose an option:")
         print("1. Claim faucet")
-        print("2. Buat pesan baru untuk claim faucet")
-        print("3. Keluar")  
+        print("2. Create a new message for faucet claim")
+        print("3. Exit")
 
-        choice = input("Masukkan pilihan (1/2/3): ")
+        choice = input("Enter your choice (1/2/3): ")
 
         if choice == "1":
             send_all_messages()
         elif choice == "2":
             add_channel()
-            config = load_config()  # Reload config setelah menambah channel
-            send_all_messages()  # Kirim pesan setelah channel baru ditambahkan
+            config = load_config()  # Reload config after adding a channel
+            send_all_messages()  # Send messages after adding a new channel
         elif choice == "3":
-            print("Keluar dari program.")
-            sys.exit(0)  # Hentikan program sepenuhnya
+            print("Exiting program.")
+            sys.exit(0)  # Terminate the program completely
         else:
-            print("Pilihan tidak valid, coba lagi.")
+            print("Invalid choice, please try again.")
 
 except KeyboardInterrupt:
-    print("\nProgram dihentikan oleh pengguna.")
+    print("\nProgram interrupted by user.")
     sys.exit(0)
